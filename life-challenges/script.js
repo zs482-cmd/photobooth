@@ -8,7 +8,6 @@ const stage = overlay.querySelector('.result-stage');
 const drawButton = $('drawBtn');
 const storageKey = 'little-adventures-drawn-v1';
 const bookKey = 'little-adventures-book-v1';
-const fontKey = 'little-adventures-font-v1';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let drawn = [];
 let entries = [];
@@ -23,15 +22,6 @@ try {
   if (Array.isArray(saved)) entries = saved.filter(item => item && Number.isInteger(item.id) && item.id >= 0 && item.id < challenges.length && typeof item.done === 'boolean');
   entries = [...new Map(entries.map(item => [item.id, item])).values()];
 } catch { /* Start with an empty notebook. */ }
-const fontChoices = ['ink', 'hand', 'play'];
-function applyFont(font) {
-  const choice = fontChoices.includes(font) ? font : 'ink';
-  document.body.dataset.font = choice;
-  document.querySelectorAll('[data-font-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.fontChoice === choice)));
-  localStorage.setItem(fontKey, choice);
-}
-document.querySelectorAll('[data-font-choice]').forEach(button => button.addEventListener('click', () => applyFont(button.dataset.fontChoice)));
-applyFont(localStorage.getItem(fontKey) || 'ink');
 function persistBook() { localStorage.setItem(bookKey, JSON.stringify(entries)); }
 function updateBookBadge() { $('bookBadge').hidden = entries.length === 0; }
 updateBookBadge();
@@ -53,16 +43,6 @@ for (let i = 0; i < 58; i++) {
   $('snowfall').append(flake);
 }
 
-// The whole machine has real depth: pointer movement reveals its side and top.
-document.querySelector('.machine-area').addEventListener('pointermove', (event) => {
-  if (busy || matchMedia('(max-width: 1100px)').matches) return;
-  const rect = event.currentTarget.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width - .5;
-  const y = (event.clientY - rect.top) / rect.height - .5;
-  machine.style.transform = `rotateY(${-9 + x * 20}deg) rotateX(${2 - y * 9}deg)`;
-});
-document.querySelector('.machine-area').addEventListener('pointerleave', () => { machine.style.transform = ''; });
-
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function draw() {
   if (busy) return;
@@ -71,11 +51,11 @@ async function draw() {
   const choice = remaining[Math.floor(Math.random() * remaining.length)];
   busy = true;
   drawButton.disabled = true;
-  drawButton.querySelector('span').textContent = '扭蛋正在旋转…';
+  drawButton.setAttribute('aria-label', '扭蛋正在旋转');
   machine.classList.add('mixing');
   await pause(reducedMotion ? 100 : 1600);
   machine.classList.remove('mixing');
-  drawButton.querySelector('span').textContent = '扭蛋落下来了…';
+  drawButton.setAttribute('aria-label', '扭蛋落下来了');
   const ball = document.createElement('div');
   ball.className = 'dispensed';
   document.querySelector('.machine-area').append(ball);
@@ -85,7 +65,9 @@ async function draw() {
   currentChoice = choice;
   $('paperNumber').textContent = `NO. ${String(choice + 1).padStart(3,'0')} / 100`;
   $('paperText').textContent = challenges[choice];
-  $('saveBtn').textContent = entries.some(item => item.id === choice) ? '查看记录本 ✦' : '放进记录本 ✦';
+  const alreadySaved = entries.some(item => item.id === choice);
+  $('saveBtn').setAttribute('aria-label', alreadySaved ? '查看记录本' : '放进记录本');
+  $('saveBtn').title = alreadySaved ? '查看记录本' : '放进记录本';
   stage.classList.remove('open');
   overlay.hidden = false;
   ball.remove();
@@ -94,7 +76,7 @@ async function draw() {
   await pause(reducedMotion ? 30 : 450);
   $('closeResult').focus();
   drawButton.disabled = false;
-  drawButton.querySelector('span').textContent = '抽一个挑战';
+  drawButton.setAttribute('aria-label', '转动旋钮，抽一个挑战');
   busy = false;
 }
 function close() { overlay.hidden = true; stage.classList.remove('open'); drawButton.focus(); }
