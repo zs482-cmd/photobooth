@@ -7,16 +7,34 @@ const overlay = $('resultOverlay');
 const stage = overlay.querySelector('.result-stage');
 const drawButton = $('drawBtn');
 const storageKey = 'little-adventures-drawn-v1';
+const bookKey = 'little-adventures-book-v1';
+const fontKey = 'little-adventures-font-v1';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let drawn = [];
+let entries = [];
+let currentChoice = null;
 let busy = false;
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
   if (Array.isArray(saved)) drawn = [...new Set(saved.filter(n => Number.isInteger(n) && n >= 0 && n < challenges.length))];
 } catch { /* Start fresh if storage was corrupted. */ }
-
-function updateCount() { $('drawCount').textContent = drawn.length; }
-updateCount();
+try {
+  const saved = JSON.parse(localStorage.getItem(bookKey) || '[]');
+  if (Array.isArray(saved)) entries = saved.filter(item => item && Number.isInteger(item.id) && item.id >= 0 && item.id < challenges.length && typeof item.done === 'boolean');
+  entries = [...new Map(entries.map(item => [item.id, item])).values()];
+} catch { /* Start with an empty notebook. */ }
+const fontChoices = ['ink', 'hand', 'play'];
+function applyFont(font) {
+  const choice = fontChoices.includes(font) ? font : 'ink';
+  document.body.dataset.font = choice;
+  document.querySelectorAll('[data-font-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.fontChoice === choice)));
+  localStorage.setItem(fontKey, choice);
+}
+document.querySelectorAll('[data-font-choice]').forEach(button => button.addEventListener('click', () => applyFont(button.dataset.fontChoice)));
+applyFont(localStorage.getItem(fontKey) || 'ink');
+function persistBook() { localStorage.setItem(bookKey, JSON.stringify(entries)); }
+function updateBookBadge() { $('bookBadge').hidden = entries.length === 0; }
+updateBookBadge();
 
 const colors = ['#eaaab3','#a7c1dd','#f7c997','#a9d5c5','#d2b8d9','#f4d78e'];
 const spots = [[5,4],[36,2],[68,5],[20,26],[53,25],[79,27],[1,51],[33,50],[65,50],[17,73],[50,73],[77,73]];
@@ -64,9 +82,10 @@ async function draw() {
   await pause(reducedMotion ? 100 : 1100);
   drawn.push(choice);
   localStorage.setItem(storageKey, JSON.stringify(drawn));
-  updateCount();
+  currentChoice = choice;
   $('paperNumber').textContent = `NO. ${String(choice + 1).padStart(3,'0')} / 100`;
   $('paperText').textContent = challenges[choice];
+  $('saveBtn').textContent = entries.some(item => item.id === choice) ? '查看记录本 ✦' : '放进记录本 ✦';
   stage.classList.remove('open');
   overlay.hidden = false;
   ball.remove();
@@ -79,11 +98,54 @@ async function draw() {
   busy = false;
 }
 function close() { overlay.hidden = true; stage.classList.remove('open'); drawButton.focus(); }
+function renderBook() {
+  const list = $('bookList');
+  list.replaceChildren();
+  const completed = entries.filter(item => item.done).length;
+  $('bookSummary').textContent = entries.length ? `已完成 ${completed} 件 · 还有 ${entries.length - completed} 件等着你` : '抽到喜欢的挑战，就收进这里。';
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'book-empty';
+    empty.textContent = '记录本还是空的，先去抽一个挑战吧 ✦';
+    list.append(empty);
+    return;
+  }
+  entries.forEach((item, index) => {
+    const row = document.createElement('label');
+    row.className = 'book-item';
+    if (item.done) row.classList.add('done');
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.checked = item.done;
+    check.setAttribute('aria-label', `完成：${challenges[item.id]}`);
+    check.addEventListener('change', () => { item.done = check.checked; persistBook(); renderBook(); });
+    const mark = document.createElement('span');
+    mark.className = 'book-check';
+    const label = document.createElement('span');
+    label.className = 'book-item-text';
+    label.textContent = challenges[item.id];
+    const number = document.createElement('small');
+    number.textContent = `NO. ${String(item.id + 1).padStart(3, '0')}`;
+    row.style.setProperty('--row', index);
+    row.append(check, mark, label, number);
+    list.append(row);
+  });
+}
+function openBook() { renderBook(); $('bookOverlay').hidden = false; $('closeBookBtn').focus(); }
+function closeBook() { $('bookOverlay').hidden = true; $('openBookBtn').focus(); }
 drawButton.addEventListener('click', draw);
 $('againBtn').addEventListener('click', () => { close(); draw(); });
+$('saveBtn').addEventListener('click', () => {
+  if (currentChoice === null) return;
+  if (!entries.some(item => item.id === currentChoice)) { entries.unshift({ id: currentChoice, done: false }); persistBook(); updateBookBadge(); }
+  close();
+  openBook();
+});
+$('openBookBtn').addEventListener('click', openBook);
+$('closeBookBtn').addEventListener('click', closeBook);
+document.querySelector('.book-backdrop').addEventListener('click', closeBook);
 $('closeResult').addEventListener('click', close);
 overlay.querySelector('.result-backdrop').addEventListener('click', close);
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !overlay.hidden) close(); });
-$('resetBtn').addEventListener('click', () => { drawn = []; localStorage.removeItem(storageKey); updateCount(); });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (!$('bookOverlay').hidden) closeBook(); else if (!overlay.hidden) close(); });
 
 if (challenges.length !== 100) console.error(`Expected 100 challenges, got ${challenges.length}`);
